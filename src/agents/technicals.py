@@ -26,6 +26,8 @@ def technical_analyst_agent(state: AgentState):
     start_date = data["start_date"]
     end_date = data["end_date"]
     tickers = data["tickers"]
+    metadata = state.get("metadata", {})
+    data_source = metadata.get("data_source", "financialdatasets")  # Default to financialdatasets
 
     # Initialize analysis for each ticker
     technical_analysis = {}
@@ -34,11 +36,7 @@ def technical_analyst_agent(state: AgentState):
         progress.update_status("technical_analyst_agent", ticker, "Analyzing price data")
 
         # Get the historical price data
-        prices = get_prices(
-            ticker=ticker,
-            start_date=start_date,
-            end_date=end_date,
-        )
+        prices = get_prices(ticker=ticker, start_date=start_date, end_date=end_date, data_source=data_source)  # Pass data_source
 
         if not prices:
             progress.update_status("technical_analyst_agent", ticker, "Failed: No price data found")
@@ -86,31 +84,31 @@ def technical_analyst_agent(state: AgentState):
         # Generate detailed analysis report for this ticker
         technical_analysis[ticker] = {
             "signal": combined_signal["signal"],
-            "confidence": round(combined_signal["confidence"] * 100),
+            "confidence": 0 if math.isnan(combined_signal["confidence"]) else round(combined_signal["confidence"] * 100),
             "strategy_signals": {
                 "trend_following": {
                     "signal": trend_signals["signal"],
-                    "confidence": round(trend_signals["confidence"] * 100),
+                    "confidence": 0 if math.isnan(trend_signals["confidence"]) else round(trend_signals["confidence"] * 100),
                     "metrics": normalize_pandas(trend_signals["metrics"]),
                 },
                 "mean_reversion": {
                     "signal": mean_reversion_signals["signal"],
-                    "confidence": round(mean_reversion_signals["confidence"] * 100),
+                    "confidence": 0 if math.isnan(mean_reversion_signals["confidence"]) else round(mean_reversion_signals["confidence"] * 100),
                     "metrics": normalize_pandas(mean_reversion_signals["metrics"]),
                 },
                 "momentum": {
                     "signal": momentum_signals["signal"],
-                    "confidence": round(momentum_signals["confidence"] * 100),
+                    "confidence": 0 if math.isnan(momentum_signals["confidence"]) else round(momentum_signals["confidence"] * 100),
                     "metrics": normalize_pandas(momentum_signals["metrics"]),
                 },
                 "volatility": {
                     "signal": volatility_signals["signal"],
-                    "confidence": round(volatility_signals["confidence"] * 100),
+                    "confidence": 0 if math.isnan(volatility_signals["confidence"]) else round(volatility_signals["confidence"] * 100),
                     "metrics": normalize_pandas(volatility_signals["metrics"]),
                 },
                 "statistical_arbitrage": {
                     "signal": stat_arb_signals["signal"],
-                    "confidence": round(stat_arb_signals["confidence"] * 100),
+                    "confidence": 0 if math.isnan(stat_arb_signals["confidence"]) else round(stat_arb_signals["confidence"] * 100),
                     "metrics": normalize_pandas(stat_arb_signals["metrics"]),
                 },
             },

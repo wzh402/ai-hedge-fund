@@ -59,6 +59,8 @@ class FinancialMetrics(BaseModel):
     earnings_per_share: float | None
     book_value_per_share: float | None
     free_cash_flow_per_share: float | None
+    beta: float | None = None
+    shares_outstanding: float | None = None  # Added field
 
 
 class FinancialMetricsResponse(BaseModel):

@@ -48,46 +48,81 @@ def run_hedge_fund(
     end_date: str,
     portfolio: dict,
     show_reasoning: bool = False,
-    selected_analysts: list[str] = [],
+    selected_analysts: list[str] = [],  # Default to empty list
     model_name: str = "gpt-4o",
     model_provider: str = "OpenAI",
+    data_source: str = "financialdatasets",  # Added data_source
 ):
     # Start progress tracking
     progress.start()
 
     try:
-        # Create a new workflow if analysts are customized
-        if selected_analysts:
-            workflow = create_workflow(selected_analysts)
-            agent = workflow.compile()
-        else:
-            agent = app
+        # Always create and compile the workflow within this function's scope.
+        # create_workflow will use selected_analysts if provided (even if empty, it will default),
+        # or its own defaults if selected_analysts is None.
+        workflow = create_workflow(selected_analysts)
+        # Ensure the "prediction_aggregator" (portfolio_manager) is part of the graph
+        # if it's not already added by default or by selection.
+        # Based on create_workflow, portfolio_manager is always added.
+        agent = workflow.compile()
 
-        final_state = agent.invoke(
-            {
-                "messages": [
-                    HumanMessage(
-                        content="Make trading decisions based on the provided data.",
-                    )
-                ],
-                "data": {
-                    "tickers": tickers,
-                    "portfolio": portfolio,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "analyst_signals": {},
-                },
-                "metadata": {
-                    "show_reasoning": show_reasoning,
-                    "model_name": model_name,
-                    "model_provider": model_provider,
-                },
+        initial_state = {
+            "messages": [
+                HumanMessage(
+                    content="Make trading decisions based on the provided data.",
+                )
+            ],
+            "data": {
+                "tickers": tickers,
+                "portfolio": portfolio,  # This is the mock_portfolio_for_agent from backtester
+                "start_date": start_date,  # This is analysis_start_str from backtester
+                "end_date": end_date,  # This is analysis_end_str from backtester
+                "analyst_signals": {},
             },
-        )
+            "metadata": {
+                "show_reasoning": show_reasoning,
+                "model_name": model_name,
+                "model_provider": model_provider,
+                # Crucially, tell the portfolio_manager_agent it\'s in prediction mode
+                "run_mode": "prediction",
+                "data_source": data_source,  # Pass data_source to metadata
+            },
+        }
+        # Debug: Print the initial state being sent to the agent graph
+        print(f"DEBUG main.py: Initial state for agent.invoke: {initial_state}")
+
+        final_state = agent.invoke(initial_state)
+
+        # Debug: Print the final state received from the agent graph
+        print(f"DEBUG main.py: Final state from agent.invoke: {final_state}")
+
+        # The portfolio_manager_agent, when in 'prediction' mode, should place its
+        # WeeklyPredictionsOutput directly into the 'messages' or a designated part of 'data'.
+        # Let's assume it places it in final_state["data"]["weekly_predictions"]
+        # Or, if it's still using the 'content' of the last message:
+
+        # Try to get predictions from a structured part of the state first
+        # This depends on how portfolio_manager_agent is modified to output predictions
+        if "weekly_predictions" in final_state.get("data", {}):
+            # This is the ideal path if portfolio_manager is updated to put structured output here
+            parsed_response = final_state["data"]["weekly_predictions"]
+            print(f"DEBUG main.py: Predictions found in final_state['data']['weekly_predictions']: {parsed_response}")
+        elif final_state["messages"] and isinstance(final_state["messages"][-1].content, str):
+            # Fallback to parsing the last message content if it's a JSON string
+            parsed_response = parse_hedge_fund_response(final_state["messages"][-1].content)
+            print(f"DEBUG main.py: Predictions parsed from final_state['messages'][-1].content: {parsed_response}")
+        elif isinstance(final_state["messages"][-1].content, dict):
+            # If the content is already a dict (e.g. from a Pydantic model output)
+            parsed_response = final_state["messages"][-1].content
+            print(f"DEBUG main.py: Predictions taken directly from final_state['messages'][-1].content (already a dict): {parsed_response}")
+        else:
+            print(f"DEBUG main.py: No recognizable prediction output found in final_state. Last message content: {final_state['messages'][-1].content if final_state['messages'] else 'No messages'}")
+            parsed_response = None
 
         return {
-            "decisions": parse_hedge_fund_response(final_state["messages"][-1].content),
-            "analyst_signals": final_state["data"]["analyst_signals"],
+            # This key 'decisions' is what backtester.py is looking for under agent_output_state.get("decisions")
+            "decisions": parsed_response,
+            "analyst_signals": final_state.get("data", {}).get("analyst_signals", {}),
         }
     finally:
         # Stop progress tracking
@@ -107,9 +142,10 @@ def create_workflow(selected_analysts=None):
     # Get analyst nodes from the configuration
     analyst_nodes = get_analyst_nodes()
 
-    # Default to all analysts if none selected
-    if selected_analysts is None:
+    # Default to all analysts if none selected or if an empty list is passed
+    if not selected_analysts:  # Handles None or empty list
         selected_analysts = list(analyst_nodes.keys())
+
     # Add selected analyst nodes
     for analyst_key in selected_analysts:
         node_name, node_func = analyst_nodes[analyst_key]
@@ -251,6 +287,7 @@ if __name__ == "__main__":
 
     # Create the workflow with selected analysts
     workflow = create_workflow(selected_analysts)
+    # Compile the app here, so it's available for saving the graph and running the fund
     app = workflow.compile()
 
     if args.show_agent_graph:
@@ -259,7 +296,7 @@ if __name__ == "__main__":
             for selected_analyst in selected_analysts:
                 file_path += selected_analyst + "_"
             file_path += "graph.png"
-        save_graph_as_png(app, file_path)
+        save_graph_as_png(app, file_path)  # Now app is defined
 
     # Validate dates if provided
     if args.start_date:
@@ -314,8 +351,8 @@ if __name__ == "__main__":
         end_date=end_date,
         portfolio=portfolio,
         show_reasoning=args.show_reasoning,
-        selected_analysts=selected_analysts,
-        model_name=model_name,
-        model_provider=model_provider,
+        selected_analysts=selected_analysts,  # Pass the selected analysts
+        model_name=model_name,  # Pass the selected model name
+        model_provider=model_provider,  # Pass the selected model provider
     )
     print_trading_output(result)

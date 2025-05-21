@@ -15,7 +15,15 @@ def merge_dicts(a: dict[str, any], b: dict[str, any]) -> dict[str, any]:
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     data: Annotated[dict[str, any], merge_dicts]
-    metadata: Annotated[dict[str, any], merge_dicts]
+    metadata: Annotated[dict[str, any], merge_dicts]  # Existing field
+    # Add data_source to metadata, for example:
+    # metadata: {
+    #     "show_reasoning": bool,
+    #     "model_name": str,
+    #     "model_provider": str,
+    #     "data_source": str, # Added data_source
+    #     "run_mode": str # For 'prediction' or 'trading'
+    # }
 
 
 def show_agent_reasoning(output, agent_name):
